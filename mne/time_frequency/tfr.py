@@ -546,20 +546,18 @@ def _compute_tfr(
     if method == "morlet":
         W = morlet(sfreq, freqs, n_cycles=n_cycles, zero_mean=zero_mean)
         Ws = [W]  # to have same dimensionality as the 'multitaper' case
+        weights = None  # no tapers for Morlet estimates
 
     elif method == "multitaper":
-        out = _make_dpss(
+        Ws, weights = _make_dpss(
             sfreq,
             freqs,
             n_cycles=n_cycles,
             time_bandwidth=time_bandwidth,
             zero_mean=zero_mean,
-            return_weights=return_weights,
+            return_weights=True,  # required for converting complex → power
         )
-        if return_weights:
-            Ws, weights = out
-        else:
-            Ws = out
+        weights = np.asarray(weights)
 
     # Check wavelets
     if len(Ws[0][0]) > epoch_data.shape[2]:
@@ -583,8 +581,6 @@ def _compute_tfr(
         out = np.empty((n_chans, n_freqs, n_times), dtype)
     elif output in ["complex", "phase"] and method == "multitaper":
         out = np.empty((n_chans, n_tapers, n_epochs, n_freqs, n_times), dtype)
-        if return_weights:
-            weights = np.array(weights)
     else:
         out = np.empty((n_chans, n_epochs, n_freqs, n_times), dtype)
 
@@ -595,7 +591,7 @@ def _compute_tfr(
 
     # Parallelization is applied across channels.
     tfrs = parallel(
-        my_cwt(channel, Ws, output, use_fft, "same", decim, method)
+        my_cwt(channel, Ws, output, use_fft, "same", decim, weights)
         for channel in epoch_data.transpose(1, 0, 2)
     )
 
@@ -685,7 +681,7 @@ def _check_tfr_param(
     return freqs, sfreq, zero_mean, n_cycles, time_bandwidth, decim
 
 
-def _time_frequency_loop(X, Ws, output, use_fft, mode, decim, method=None):
+def _time_frequency_loop(X, Ws, output, use_fft, mode, decim, weights=None):
     """Aux. function to _compute_tfr.
 
     Loops time-frequency transform across wavelets and epochs.
@@ -712,9 +708,8 @@ def _time_frequency_loop(X, Ws, output, use_fft, mode, decim, method=None):
         See numpy.convolve.
     decim : slice
         The decimation slice: e.g. power[:, decim]
-    method : str | None
-        Used only for multitapering to create tapers dimension in the output
-        if ``output in ['complex', 'phase']``.
+    weights : array, shape (n_tapers, n_wavelets) | None
+        Concentration weights for each taper in the wavelets, if present.
     """
     # Set output type
     dtype = np.float64
@@ -728,10 +723,12 @@ def _time_frequency_loop(X, Ws, output, use_fft, mode, decim, method=None):
     n_freqs = len(Ws[0])
     if ("avg_" in output) or ("itc" in output):
         tfrs = np.zeros((n_freqs, n_times), dtype=dtype)
-    elif output in ["complex", "phase"] and method == "multitaper":
+    elif output in ["complex", "phase"] and weights is not None:
         tfrs = np.zeros((n_tapers, n_epochs, n_freqs, n_times), dtype=dtype)
     else:
         tfrs = np.zeros((n_epochs, n_freqs, n_times), dtype=dtype)
+    if weights is not None:
+        weights = np.expand_dims(weights, axis=-1)  # add singleton time dimension
 
     # Loops across tapers.
     for taper_idx, W in enumerate(Ws):
@@ -746,6 +743,8 @@ def _time_frequency_loop(X, Ws, output, use_fft, mode, decim, method=None):
         # Loop across epochs
         for epoch_idx, tfr in enumerate(coefs):
             # Transform complex values
+            if output not in ["complex", "phase"] and weights is not None:
+                tfr = weights[taper_idx] * tfr  # weight each taper estimate
             if output in ["power", "avg_power"]:
                 tfr = (tfr * tfr.conj()).real  # power
             elif output == "phase":
@@ -761,7 +760,7 @@ def _time_frequency_loop(X, Ws, output, use_fft, mode, decim, method=None):
             # Stack or add
             if ("avg_" in output) or ("itc" in output):
                 tfrs += tfr
-            elif output in ["complex", "phase"] and method == "multitaper":
+            elif output in ["complex", "phase"] and weights is not None:
                 tfrs[taper_idx, epoch_idx] += tfr
             else:
                 tfrs[epoch_idx] += tfr
@@ -776,9 +775,12 @@ def _time_frequency_loop(X, Ws, output, use_fft, mode, decim, method=None):
     if ("avg_" in output) or ("itc" in output):
         tfrs /= n_epochs
 
-    # Normalization by number of taper
+    # Normalization by taper weights
     if n_tapers > 1 and output not in ["complex", "phase"]:
-        tfrs /= n_tapers
+        if ("avg_" not in output) and ("itc" not in output):
+            weights = np.expand_dims(weights, axis=0)
+        tfrs *= 2 / (weights * weights.conj()).real.sum(axis=-3)
+
     return tfrs
 
 
