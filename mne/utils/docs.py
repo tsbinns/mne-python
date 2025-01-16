@@ -4656,6 +4656,12 @@ title : str | None
     The title of the generated figure. If ``None`` (default), no title is
     displayed.
 """
+
+docdict["title_stc"] = """
+title : str | None
+    Title for the figure window. If ``None``, the subject name will be used.
+"""
+
 docdict["title_tfr_plot"] = """
 title : str | 'auto' | None
     Title for the plot. If ``"auto"``, will use the channel name (if ``combine`` is
@@ -5013,7 +5019,7 @@ weights : array, shape (n_tapers, n_freqs) | None
     The weights for each taper. Must be provided if ``data`` has a taper dimension, such
     as for complex or phase multitaper data.
 
-    .. versionadded:: 1.X.0
+    .. versionadded:: 1.10.0
 """
 docdict["weights_tfr_attr"] = """
 weights : array, shape (n_tapers, n_freqs) | None

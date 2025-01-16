@@ -486,7 +486,6 @@ def _compute_tfr(
         * 'itc' : inter-trial coherence.
         * 'avg_power_itc' : average of single trial power and inter-trial
           coherence across trials.
-
     return_weights : bool, default False
         Whether to return the taper weights. Only applies if method='multitaper' and
         output='complex' or 'phase'.
@@ -549,15 +548,13 @@ def _compute_tfr(
         weights = None  # no tapers for Morlet estimates
 
     elif method == "multitaper":
-        Ws, weights = _make_dpss(
+        Ws = _make_dpss(
             sfreq,
             freqs,
             n_cycles=n_cycles,
             time_bandwidth=time_bandwidth,
             zero_mean=zero_mean,
-            return_weights=True,  # required for converting complex → power
         )
-        weights = np.asarray(weights)
 
     # Check wavelets
     if len(Ws[0][0]) > epoch_data.shape[2]:
@@ -581,6 +578,8 @@ def _compute_tfr(
         out = np.empty((n_chans, n_freqs, n_times), dtype)
     elif output in ["complex", "phase"] and method == "multitaper":
         out = np.empty((n_chans, n_tapers, n_epochs, n_freqs, n_times), dtype)
+        if return_weights:
+            weights = np.array(weights)
     else:
         out = np.empty((n_chans, n_epochs, n_freqs, n_times), dtype)
 
@@ -621,8 +620,7 @@ def _check_tfr_param(
     freqs = np.asarray(freqs, dtype=float)
     if freqs.ndim != 1:
         raise ValueError(
-            f"freqs must be of shape (n_freqs,), got {np.array(freqs.shape)} "
-            "instead."
+            f"freqs must be of shape (n_freqs,), got {np.array(freqs.shape)} instead."
         )
 
     # Check sfreq
@@ -1213,8 +1211,8 @@ class BaseTFR(ContainsMixin, UpdateChannelsMixin, SizeMixin, ExtendedTimeMixin):
                 classname = "EpochsTFR"
             # end TODO
             raise ValueError(
-                f'{classname} got unsupported parameter value{_pl(problem)} '
-                f'{" and ".join(problem)}.'
+                f"{classname} got unsupported parameter value{_pl(problem)} "
+                f"{' and '.join(problem)}."
             )
         # check method
         valid_methods = ["morlet", "multitaper"]
@@ -1541,7 +1539,7 @@ class BaseTFR(ContainsMixin, UpdateChannelsMixin, SizeMixin, ExtendedTimeMixin):
             s = _pl(negative_values.sum())
             warn(
                 f"Negative value in time-frequency decomposition for channel{s} "
-                f'{", ".join(chs)}',
+                f"{', '.join(chs)}",
                 UserWarning,
             )
 
@@ -1856,10 +1854,6 @@ class BaseTFR(ContainsMixin, UpdateChannelsMixin, SizeMixin, ExtendedTimeMixin):
         return_freqs : bool
             Whether to return the frequency bin values for the requested
             frequency range. Default is ``False``.
-        return_tapers : bool
-            Whether to return the taper numbers. Default is ``False``.
-
-            .. versionadded:: 1.X.0
 
         Returns
         -------
@@ -2040,9 +2034,6 @@ class BaseTFR(ContainsMixin, UpdateChannelsMixin, SizeMixin, ExtendedTimeMixin):
         want_shape[ch_axis] = len(idx_picks) if combine is None else 1
         want_shape[freq_axis] = len(freqs)  # in case there was fmin/fmax cropping
         want_shape[time_axis] = len(times)  # in case there was tmin/tmax cropping
-        want_shape = [
-            n for i, n in enumerate(want_shape) if self._dims[i] != "taper"
-        ]  # tapers must be aggregated over by now
         want_shape = tuple(want_shape)
         # combine
         combine_was_none = combine is None
@@ -3055,48 +3046,6 @@ class EpochsTFR(BaseTFR, GetEpochsMixin):
     %(picks_good_data_noref)s
     %(proj_psd)s
     %(decim_tfr)s
-    %(events_epochstfr)s
-
-        .. deprecated:: 1.7
-            Pass an instance of :class:`~mne.Epochs` as ``inst`` instead, or use
-            :class:`~mne.time_frequency.EpochsTFRArray` which retains the old API.
-    %(event_id_epochstfr)s
-
-        .. deprecated:: 1.7
-            Pass an instance of :class:`~mne.Epochs` as ``inst`` instead, or use
-            :class:`~mne.time_frequency.EpochsTFRArray` which retains the old API.
-    selection : array
-        List of indices of selected events (not dropped or ignored etc.). For
-        example, if the original event array had 4 events and the second event
-        has been dropped, this attribute would be np.array([0, 2, 3]).
-
-        .. deprecated:: 1.7
-            Pass an instance of :class:`~mne.Epochs` as ``inst`` instead, or use
-            :class:`~mne.time_frequency.EpochsTFRArray` which retains the old API.
-    drop_log : tuple of tuple
-        A tuple of the same length as the event array used to initialize the
-        ``EpochsTFR`` object. If the i-th original event is still part of the
-        selection, drop_log[i] will be an empty tuple; otherwise it will be
-        a tuple of the reasons the event is not longer in the selection, e.g.:
-
-        - ``'IGNORED'``
-            If it isn't part of the current subset defined by the user
-        - ``'NO_DATA'`` or ``'TOO_SHORT'``
-            If epoch didn't contain enough data names of channels that
-            exceeded the amplitude threshold
-        - ``'EQUALIZED_COUNTS'``
-            See :meth:`~mne.Epochs.equalize_event_counts`
-        - ``'USER'``
-            For user-defined reasons (see :meth:`~mne.Epochs.drop`).
-
-        .. deprecated:: 1.7
-            Pass an instance of :class:`~mne.Epochs` as ``inst`` instead, or use
-            :class:`~mne.time_frequency.EpochsTFRArray` which retains the old API.
-    %(metadata_epochstfr)s
-
-        .. deprecated:: 1.7
-            Pass an instance of :class:`~mne.Epochs` as ``inst`` instead, or use
-            :class:`~mne.time_frequency.EpochsTFRArray` which retains the old API.
     %(n_jobs)s
     %(verbose)s
     %(method_kw_tfr)s
@@ -3141,11 +3090,6 @@ class EpochsTFR(BaseTFR, GetEpochsMixin):
         picks=None,
         proj=False,
         decim=1,
-        events=None,
-        event_id=None,
-        selection=None,
-        drop_log=None,
-        metadata=None,
         n_jobs=None,
         verbose=None,
         **method_kw,
@@ -3222,8 +3166,14 @@ class EpochsTFR(BaseTFR, GetEpochsMixin):
         ).squeeze(axis=0)
         self.events = state.get("events", _ensure_events(fake_events))
         self.event_id = state.get("event_id", _check_event_id(None, self.events))
-        self.drop_log = state.get("drop_log", tuple())
         self.selection = state.get("selection", np.arange(n_epochs))
+        self.drop_log = state.get(
+            "drop_log",
+            tuple(
+                () if k in self.selection else ("IGNORED",)
+                for k in range(max(len(self.events), max(self.selection) + 1))
+            ),
+        )
         self._bad_dropped = True  # always true, need for `equalize_event_counts()`
 
     def __next__(self, return_event_id=False):
@@ -3958,10 +3908,10 @@ class RawTFRArray(RawTFR):
 def combine_tfr(all_tfr, weights="nave"):
     """Merge AverageTFR data by weighted addition.
 
-    Create a new AverageTFR instance, using a combination of the supplied
-    instances as its data. By default, the mean (weighted by trials) is used.
-    Subtraction can be performed by passing negative weights (e.g., [1, -1]).
-    Data must have the same channels and the same time instants.
+    Create a new :class:`mne.time_frequency.AverageTFR` instance, using a combination of
+    the supplied instances as its data. By default, the mean (weighted by trials) is
+    used. Subtraction can be performed by passing negative weights (e.g., [1, -1]). Data
+    must have the same channels and the same time instants.
 
     Parameters
     ----------
@@ -4004,10 +3954,10 @@ def combine_tfr(all_tfr, weights="nave"):
 
     ch_names = tfr.ch_names
     for t_ in all_tfr[1:]:
-        assert t_.ch_names == ch_names, ValueError(
+        assert t_.ch_names == ch_names, (
             f"{tfr} and {t_} do not contain the same channels"
         )
-        assert np.max(np.abs(t_.times - tfr.times)) < 1e-7, ValueError(
+        assert np.max(np.abs(t_.times - tfr.times)) < 1e-7, (
             f"{tfr} and {t_} do not contain the same time instants"
         )
 
@@ -4206,7 +4156,7 @@ def _read_multiple_tfrs(tfr_data, condition=None, *, verbose=None):
     if len(out) == 0:
         raise ValueError(
             f'Cannot find condition "{condition}" in this file. '
-            f'The file contains conditions {", ".join(keys)}'
+            f"The file contains conditions {', '.join(keys)}"
         )
     if len(out) == 1:
         out = out[0]
@@ -4310,14 +4260,7 @@ def _prep_data_for_plot(
     freqs = freqs[freq_mask]
     # crop data
     data = data[..., freq_mask, :][..., time_mask]
-    # handle unaggregated multitaper (complex or phase multitaper data)
-    if taper_weights is not None:  # assumes a taper dimension
-        logger.info("Aggregating multitaper estimates before plotting...")
-        if np.iscomplexobj(data):  # complex coefficients → power
-            data = _tfr_from_mt(data, taper_weights)
-        else:  # tapered phase data → weighted phase data
-            data = (data * taper_weights[np.newaxis, :, :, np.newaxis]).mean(axis=1)
-    # handle remaining complex amplitude → real power
+    # complex amplitude → real power; real-valued data is already power (or ITC)
     if np.iscomplexobj(data):
         data = (data * data.conj()).real
     if dB:
